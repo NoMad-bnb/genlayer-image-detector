@@ -13,23 +13,48 @@ const client = createClient({
 });
 
 const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
+const IMGBB_API_KEY = process.env.NEXT_PUBLIC_IMGBB_API_KEY;
 
 export default function HomePage() {
-  const [text, setText] = useState("");
+  const [image, setImage] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string>("");
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const analyzeText = async () => {
-    if (!text.trim()) return;
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setImage(file);
+      setPreview(URL.createObjectURL(file));
+      setResult(null);
+      setError("");
+    }
+  };
+
+  const uploadToImgBB = async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append("image", file);
+    const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+      method: "POST",
+      body: formData,
+    });
+    const data = await res.json();
+    return data.data.url;
+  };
+
+  const analyzeImage = async () => {
+    if (!image) return;
     setLoading(true);
     setResult(null);
     setError("");
     try {
+      const imageUrl = await uploadToImgBB(image);
+
       const txHash = await client.writeContract({
         address: CONTRACT_ADDRESS,
-        functionName: "analyze_content",
-        args: [text],
+        functionName: "analyze_image",
+        args: [imageUrl],
         value: 0n,
       });
 
@@ -61,26 +86,34 @@ export default function HomePage() {
         <div className="max-w-3xl mx-auto">
           <div className="text-center mb-8">
             <h1 className="text-4xl md:text-5xl font-bold mb-4">
-              AI Content Detector
+              AI Image Detector
             </h1>
             <p className="text-lg text-muted-foreground">
-              Detect if text is AI-generated or Human-written using GenLayer blockchain.
+              Detect if an image is AI-generated or a real photograph using GenLayer blockchain.
             </p>
           </div>
 
           <div className="glass-card p-6 space-y-4">
-            <textarea
-              className="w-full h-40 p-4 rounded-lg bg-white/5 border border-white/10 text-white resize-none focus:outline-none focus:border-accent"
-              placeholder="Paste any text here to analyze..."
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-            />
+            <div className="w-full h-48 rounded-lg border-2 border-dashed border-white/20 flex items-center justify-center relative overflow-hidden">
+              {preview ? (
+                <img src={preview} alt="Preview" className="w-full h-full object-contain" />
+              ) : (
+                <p className="text-muted-foreground">Click to upload an image</p>
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageChange}
+                className="absolute inset-0 opacity-0 cursor-pointer"
+              />
+            </div>
+
             <button
-              onClick={analyzeText}
-              disabled={loading || !text.trim()}
+              onClick={analyzeImage}
+              disabled={loading || !image}
               className="w-full py-3 px-6 rounded-lg bg-accent text-white font-bold hover:opacity-90 disabled:opacity-50 transition-all"
             >
-              {loading ? "Analyzing... (this may take a minute)" : "Analyze Text"}
+              {loading ? "Analyzing... (this may take a minute)" : "Analyze Image"}
             </button>
             {error && <p className="text-red-400 text-sm">{error}</p>}
           </div>
@@ -91,12 +124,12 @@ export default function HomePage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <p className="text-muted-foreground text-sm">Type</p>
-                  <p className={`text-2xl font-bold ${result.content_type === "Human" ? "text-green-400" : "text-red-400"}`}>
-                    {result.content_type}
+                  <p className={`text-2xl font-bold ${result.image_type === "Real" ? "text-green-400" : "text-red-400"}`}>
+                    {result.image_type}
                   </p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-muted-foreground text-sm">Quality Score</p>
+                  <p className="text-muted-foreground text-sm">Confidence Score</p>
                   <p className="text-2xl font-bold text-accent">{result.score}/10</p>
                 </div>
               </div>
